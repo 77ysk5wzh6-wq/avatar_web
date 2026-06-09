@@ -844,6 +844,21 @@
       }
     }
 
+    // 화면 좌표(px) → z=0 평면 월드 좌표
+    const _hit2 = new THREE.Vector3();
+    function screenToWorld(sx, sy) {
+      ndc.x = (sx / window.innerWidth) * 2 - 1;
+      ndc.y = -(sy / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(ndc, camera);
+      if (raycaster.ray.intersectPlane(plane, _hit2)) return { x: _hit2.x, y: _hit2.y };
+      return null;
+    }
+
+    // 클릭 → 점들이 그 지점으로 모임 (가까울수록 강, 멀수록 거의 영향 없음). 1회 임펄스 후 복귀.
+    let attract = null; // { x, y } — simulate에서 한 번 적용 후 비움
+    const ATTRACT_R = 13.0;   // 영향 반경 (이 밖은 거의 0)
+    const ATTRACT_K = 12.0;   // 끌어당김 세기 (강하게)
+
     const PUSH_R = 2.8;        // 숟가락 반경 (넓혀서 경계가 더 부드럽게)
     const FRICTION = 2.4;      // 마찰↑ → 밀린 뒤 덜 출렁이고 부드럽게 정착
     const RETURN = 0.35;       // 제자리로 복귀하는 힘(초당) → 아주 천천히
@@ -891,6 +906,20 @@
           }
         }
 
+        // 2-b) 클릭 끌어당김: 그 지점으로 모임. 가까울수록 강, 멀수록 거의 0 (1회 임펄스)
+        if (attract) {
+          const ax = attract.x - cx, ay = attract.y - cy;
+          const adist = Math.hypot(ax, ay);
+          if (adist < ATTRACT_R && adist > 0.001) {
+            // 거리에 반비례 (가까울수록 강) + 반경 밖으로 부드럽게 0
+            const near = 1 - adist / ATTRACT_R;          // 0~1
+            const strength = near * near;                // 가까울수록 급격히 강하게
+            const ux = ax / adist, uy = ay / adist;       // 클릭 지점 방향 단위벡터
+            velX[i] += ux * ATTRACT_K * strength;
+            velY[i] += uy * ATTRACT_K * strength;
+          }
+        }
+
         // 3) 관성 + 마찰: 밀린 속도로 이동하다 서서히 멈춤
         offX[i] += velX[i] * dt;
         offY[i] += velY[i] * dt;
@@ -908,6 +937,7 @@
       }
       geo.attributes.position.needsUpdate = true;
       spoon.px = spoon.x; spoon.py = spoon.y;
+      attract = null;  // 끌어당김은 클릭 프레임에 1회만 (이후 마찰·복귀로 흩어짐)
     }
 
     bgMat.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
@@ -997,6 +1027,14 @@
       if (!rafQueued) { rafQueued = true; requestAnimationFrame(applyGaze); }
     }
     window.addEventListener('pointermove', onPointerMove, { passive: true });
+
+    // 클릭 → 그 지점으로 점들이 모임 (버튼/링크 클릭은 제외, 접근성 모드 비활성)
+    window.addEventListener('pointerdown', (e) => {
+      if (REDUCED) return;
+      if (e.target.closest('button, a, nav, input, select, textarea')) return;
+      const w = screenToWorld(e.clientX, e.clientY);
+      if (w) attract = w;
+    });
 
     // reset when the pointer truly leaves the window
     window.addEventListener('pointerout', (e) => {
