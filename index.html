@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AETHERA · 숨 쉬는 빛을 입다</title>
+<meta name="description" content="AETHERA — 심야의 숲에서 자란 생체발광 유기체. 당신의 손길에 반응하는 살아있는 빛." />
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@400;500;600;700&family=Inter:wght@300;400;500&family=Space+Mono:wght@400&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" />
+
+<!-- Three.js importmap — MUST come before any module that imports 'three'.
+     Pinned to 0.160.0. (importmap has no native CDN fallback; if unpkg is down the bg won't load.) -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<style>
+  :root {
+    /* ── Palette (Visual designer's hex, standardized everywhere) ── */
+    --bg-deepest: #02060B;
+    --bg-base-navy: #06121E;
+    --bg-mid-teal: #0A2230;
+    --bg-glow-pool: #0E3A42;
+    --bg-haze: #12515A;
+
+    --glow-cyan: #39F2D6;
+    --cyan-hot-core: #9CFFF0;
+    --bio-teal: #1ED6C4;
+    --glow-magenta: #FF4FD8;
+    --magenta-soft: #FF8AE6;
+    --violet: #8A5CFF;
+    --bio-green: #7CFF8E;
+    --bio-green-deep: #3DBF6B;
+
+    --text-primary: #EAF7F4;
+    --text-secondary: #A9C7C5;
+    --text-tertiary: #6E908F;
+
+    --glass-panel: rgba(10, 34, 48, 0.45);
+    --glass-border: rgba(57, 242, 214, 0.18);
+    --cyan-soft30: rgba(57, 242, 214, 0.30);
+    --cyan-glow45: rgba(57, 242, 214, 0.45);
+    --magenta-glow18: rgba(255, 79, 216, 0.18);
+
+    --aurora: linear-gradient(120deg, #39F2D6 0%, #8A5CFF 50%, #FF4FD8 100%);
+
+    /* ── Motion tokens ── */
+    --t-fast: 140ms;
+    --t-med: 340ms;
+    --t-slow: 620ms;
+    --ease-spring: cubic-bezier(.22, 1.4, .36, 1);   /* spring-back overshoot */
+    --ease-flinch: cubic-bezier(.34, .01, .4, 1);    /* quick recoil-in */
+    --ease-grow:   cubic-bezier(.2, .9, .25, 1.15);  /* organic growth */
+
+    --font-display: 'Unbounded', 'Pretendard', sans-serif;
+    --font-body: 'Pretendard', 'Inter', sans-serif;
+    --font-mono: 'Space Mono', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--font-body);
+    color: var(--text-primary);
+    background: var(--bg-deepest);
+    overflow-x: hidden;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    cursor: none; /* the cursor blob becomes the cursor on desktop */
+  }
+  /* Re-show the real cursor on touch / coarse pointers */
+  @media (pointer: coarse) { body, a, button { cursor: auto; } }
+  a, button { cursor: none; }
+  @media (pointer: coarse) { a, button { cursor: pointer; } }
+
+  /* ───────────────────────── BACKGROUND STACK ───────────────────────── */
+  /* (back→front): CSS gradient base (z:-2) → WebGL canvas (z:-1) → aurora haze + vignette + grain (z:0) → content (z:1) */
+
+  .bg-gradient {
+    position: fixed; inset: 0; z-index: -2; pointer-events: none;
+    /* 여러 색 레이어로 공간감: 아래에서 올려다본 심해/발광 숲. 완전 블랙 탈피 */
+    /* WebGL 캔버스가 불투명하게 배경을 그림. 이건 로딩 전 깜빡임 방지용 폴백색만. */
+    background: #0a1a2e;
+  }
+
+  #bg { /* WebGL spore field — transparent canvas over the CSS gradient */
+    position: fixed; inset: 0; z-index: -1; pointer-events: none;
+    display: block;
+  }
+
+  .aurora-haze {
+    display: none;   /* 네불라는 이제 WebGL 배경 셰이더가 그림 */
+    position: fixed; inset: -25%; z-index: -2; pointer-events: none;
+    /* 떠다니는 옅은 빛 구름(네불라) — 공간 깊이감 */
+    background:
+      radial-gradient(40% 32% at 30% 35%, rgba(100,160,230,0.34) 0%, transparent 70%),
+      radial-gradient(36% 28% at 72% 58%, rgba(165,120,215,0.26) 0%, transparent 70%),
+      radial-gradient(48% 36% at 55% 80%, rgba(80,185,195,0.22) 0%, transparent 70%);
+    opacity: 1;
+    mix-blend-mode: screen;
+    filter: blur(40px);
+    animation: nebula-drift 38s ease-in-out infinite alternate;
+  }
+  @keyframes nebula-drift {
+    0%   { transform: translate(0, 0) scale(1); }
+    100% { transform: translate(-3%, 2%) scale(1.06); }
+  }
+
+  .vignette {
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    background: radial-gradient(120% 100% at 50% 45%,
+      transparent 40%, rgba(2,6,11,0.55) 100%);
+  }
+
+  .grain { /* static SVG turbulence noise — no animation, subtle texture only */
+    position: fixed; inset: 0; z-index: 0; pointer-events: none;
+    opacity: 0.03;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* ───────────────────────── CURSOR ORGANISM BLOB ───────────────────────── */
+  /* 커서 광원 트레일 — 여러 점이 시차를 두고 따라와 흔적처럼 늘어짐 */
+  #trail { position: fixed; inset: 0; z-index: 9; pointer-events: none; }
+  #trail.awake { /* fade-in handled per dot */ }
+  .trail-dot {
+    position: fixed; top: 0; left: 0;
+    width: 240px; height: 240px;
+    margin: -120px 0 0 -120px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 50% 50%,
+      rgba(234,242,255,0.9) 0%,
+      rgba(191,216,255,0.5) 26%,
+      rgba(160,195,255,0.2) 50%,
+      rgba(160,195,255,0.06) 70%,
+      transparent 85%);
+    filter: blur(26px);
+    mix-blend-mode: screen;
+    opacity: 0;
+    will-change: transform, opacity;
+  }
+  /* 하위호환: 기존 #organism 숨김 (트레일이 대체) */
+  #organism { display: none; }
+
+  /* ───────────────────────── NAV ───────────────────────── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 22px clamp(20px, 5vw, 64px);
+    backdrop-filter: blur(2px);
+    transition: backdrop-filter .4s ease, background .4s ease, padding .4s ease;
+  }
+  nav.scrolled {
+    backdrop-filter: blur(14px);
+    background: rgba(6,18,30,0.45);
+    padding-top: 16px; padding-bottom: 16px;
+    border-bottom: 1px solid var(--glass-border);
+  }
+  .wordmark {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-size: 1.15rem;
+    letter-spacing: 0.14em;
+    text-decoration: none;
+    color: var(--text-primary);
+    background: var(--aurora);
+    background-size: 200% 200%;
+    background-position: 30% 50%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    opacity: 0.78;
+    transition: opacity .4s ease, filter .4s ease;
+  }
+  .wordmark:hover, .wordmark:focus-visible {  /* color comes alive only on action */
+    opacity: 1;
+    filter: drop-shadow(0 0 12px var(--cyan-soft30));
+  }
+  .nav-links { display: flex; gap: clamp(14px, 3vw, 36px); }
+  .nav-links a {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color .3s ease, text-shadow .3s ease;
+  }
+  .nav-links a:hover, .nav-links a:focus-visible {
+    color: var(--glow-cyan);
+    text-shadow: 0 0 12px var(--cyan-glow45);
+  }
+  @media (max-width: 560px) { .nav-links a:nth-child(n+2) { display: none; } }
+
+  /* ───────────────────────── LAYOUT ───────────────────────── */
+  main { position: relative; z-index: 1; }
+  section { padding: clamp(80px, 14vh, 160px) clamp(20px, 6vw, 90px); position: relative; }
+  .mono {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  /* ───── HERO ───── */
+  #hero {
+    min-height: 100svh;
+    display: flex; flex-direction: column; justify-content: center;
+    padding-left: clamp(20px, 9vw, 130px);
+  }
+  .gaze-stage { perspective: 1200px; }
+  .gaze {
+    transform: rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+    transition: transform .35s var(--ease-grow);
+    transform-style: preserve-3d;
+    will-change: transform;
+  }
+  .hero-copy { max-width: 920px; }
+  .hero-eyebrow { margin-bottom: 26px; color: var(--glow-cyan); }
+  .hero h1 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: clamp(2.8rem, 8vw, 6.5rem);
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+    background: var(--aurora);
+    background-size: 220% 220%;
+    background-position: 25% 50%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+    text-shadow: 0 0 30px rgba(57,242,214,0.10);
+  }
+  .hero-sub {
+    margin-top: 30px;
+    font-size: clamp(1rem, 1.6vw, 1.25rem);
+    color: var(--text-secondary);
+    font-weight: 300;
+    max-width: 560px;
+  }
+  .hero-cta-row { margin-top: 48px; display: flex; gap: 18px; flex-wrap: wrap; }
+  .hero-caption {
+    position: absolute; left: clamp(20px, 9vw, 130px); bottom: 40px;
+  }
+  .scroll-hint {
+    position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%);
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+  }
+  .scroll-hint .dot {
+    width: 5px; height: 5px; border-radius: 50%; background: var(--glow-cyan);
+    box-shadow: 0 0 10px var(--cyan-glow45);
+    animation: scroll-pulse 2.2s ease-in-out infinite;
+  }
+  @keyframes scroll-pulse {
+    0%, 100% { transform: translateY(0); opacity: 0.4; }
+    50% { transform: translateY(8px); opacity: 1; }
+  }
+
+  /* ───── BIO BUTTON (recoil) ───── */
+  .bio-btn {
+    --press: 1;
+    position: relative;
+    font-family: var(--font-body);
+    font-weight: 500;
+    font-size: 1rem;
+    color: var(--bg-deepest);
+    padding: 16px 38px;
+    border: none;
+    border-radius: 40px;
+    /* calm at rest: solid-ish bio teal, minimal glow */
+    background: linear-gradient(120deg, var(--bio-teal), var(--glow-cyan));
+    box-shadow: 0 0 0 1px var(--glass-border), 0 4px 16px rgba(2,6,11,0.4);
+    transform: scale(var(--press));
+    transition: transform var(--t-med) var(--ease-spring), box-shadow var(--t-med) ease;
+    isolation: isolate;
+    user-select: none;
+  }
+  .bio-btn::before { /* glow halo — dormant at rest, blooms on action */
+    content: ""; position: absolute; inset: -6px; z-index: -1;
+    border-radius: inherit;
+    background: linear-gradient(120deg, var(--glow-cyan), var(--violet), var(--glow-magenta));
+    filter: blur(16px); opacity: 0;
+    transition: opacity var(--t-med) ease;
+  }
+  .bio-btn:hover {
+    box-shadow: 0 0 0 1px var(--cyan-soft30), 0 8px 32px rgba(57,242,214,0.3);
+  }
+  .bio-btn:hover::before {   /* halo wakes + breathes only while hovered */
+    opacity: 0.6;
+    animation: glow-pulse 4.2s ease-in-out infinite;
+  }
+  @keyframes glow-pulse {
+    0%, 100% { opacity: 0.45; transform: scale(0.98); }
+    50% { opacity: 0.8; transform: scale(1.05); }
+  }
+  .bio-btn.is-pressed {
+    transition: transform var(--t-fast) var(--ease-flinch), box-shadow var(--t-fast) ease;
+    box-shadow: 0 0 0 1px var(--cyan-glow45), 0 4px 22px rgba(57,242,214,0.6);
+  }
+  .bio-btn.is-pressed::before { opacity: 0.85; animation: none; }
+  .bio-btn:focus-visible { outline: 2px solid var(--glow-cyan); outline-offset: 4px; }
+  .bio-btn--ghost {
+    background: transparent; color: var(--text-primary);
+    box-shadow: inset 0 0 0 1px var(--glass-border);
+  }
+  .bio-btn--ghost:hover { box-shadow: inset 0 0 0 1px var(--cyan-soft30); }
+  .bio-btn--large { padding: 22px 56px; font-size: 1.15rem; }
+  .bio-btn--small { padding: 11px 24px; font-size: 0.85rem; }
+
+  /* ───── THE ORGANISM section ───── */
+  #organism-sec .split {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: clamp(36px, 6vw, 90px);
+    align-items: center;
+  }
+  @media (max-width: 860px) { #organism-sec .split { grid-template-columns: 1fr; } }
+
+  .organism-visual {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    display: grid; place-items: center;
+  }
+  .breathe { animation: breathe 6s ease-in-out infinite; will-change: transform; }
+  @keyframes breathe {
+    0%, 100% { transform: scale(0.982); }
+    50% { transform: scale(1.018); }
+  }
+  .blob {
+    width: 78%; aspect-ratio: 1/1; border-radius: 50%;
+    background:
+      radial-gradient(circle at 38% 34%,
+        rgba(156,255,240,0.95) 0%,
+        rgba(124,255,142,0.55) 22%,
+        rgba(30,214,196,0.55) 45%,
+        rgba(14,58,66,0.6) 70%,
+        rgba(6,18,30,0.2) 100%);
+    box-shadow:
+      0 0 36px rgba(57,242,214,0.22),
+      inset -20px -28px 60px rgba(2,6,11,0.6),
+      inset 18px 22px 50px rgba(156,255,240,0.28);
+    filter: blur(0.5px);
+    transition: transform .6s var(--ease-grow), box-shadow .6s ease;
+    will-change: transform;
+  }
+  .organism-visual:hover .blob {
+    transform: scale(1.08);
+    box-shadow:
+      0 0 90px rgba(57,242,214,0.7),
+      inset -20px -28px 60px rgba(2,6,11,0.55),
+      inset 18px 22px 60px rgba(156,255,240,0.5);
+  }
+  .blob-veins { /* faint inner organic strands */
+    position: absolute; inset: 11%; border-radius: 50%;
+    background: radial-gradient(circle at 60% 65%, transparent 55%, rgba(138,92,255,0.18) 70%, transparent 78%);
+    mix-blend-mode: screen; pointer-events: none;
+  }
+  .organism-text h2, #reacts h2, #awaken h2 {
+    font-family: var(--font-display);
+    font-weight: 500;
+    font-size: clamp(1.8rem, 4vw, 3rem);
+    line-height: 1.2;
+    margin: 18px 0 24px;
+    color: var(--text-primary);
+  }
+  .organism-text p { color: var(--text-secondary); font-weight: 300; max-width: 46ch; }
+  .vitals { margin-top: 30px; display: flex; flex-direction: column; gap: 12px; }
+  .vital { display: flex; justify-content: space-between; max-width: 320px;
+    padding-bottom: 10px; border-bottom: 1px solid var(--glass-border); }
+  .vital .v-val { color: var(--glow-cyan); font-family: var(--font-mono); font-size: 0.85rem; }
+
+  /* ───── REACTS (cards) ───── */
+  #reacts { text-align: center; }
+  .sec-head { max-width: 620px; margin: 0 auto 64px; }
+  .sec-head p { color: var(--text-secondary); font-weight: 300; margin-top: 14px; }
+  .card-row {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: clamp(18px, 2.5vw, 30px);
+    max-width: 1100px; margin: 0 auto;
+    align-items: start;
+  }
+  @media (max-width: 820px) { .card-row { grid-template-columns: 1fr; max-width: 480px; } }
+  .bio-card {
+    --lean: 0;
+    position: relative;
+    text-align: left;
+    padding: 34px 30px 38px;
+    border-radius: 24px;
+    background: var(--glass-panel);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(8px);
+    transition: transform var(--t-med) var(--ease-grow),
+                box-shadow var(--t-med) ease,
+                filter var(--t-med) ease;
+    will-change: transform;
+  }
+  .bio-card:nth-child(2) { margin-top: 38px; }   /* soft staggered row */
+  @media (max-width: 820px) { .bio-card:nth-child(2) { margin-top: 0; } }
+  .bio-card:hover {
+    transform: translateY(-8px) scale(1.045);
+    box-shadow: 0 18px 50px rgba(57,242,214,0.22), 0 0 0 1px var(--cyan-soft30);
+    filter: saturate(1.15);
+    z-index: 2;
+  }
+  .bio-card.neighbor-recoil {
+    transform: translateY(calc(var(--lean) * 1px)) scale(0.985);
+    filter: brightness(0.9);
+  }
+  .card-index {
+    font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.18em;
+    color: var(--glow-cyan); opacity: 0.7;
+  }
+  .bio-card h3 {
+    font-family: var(--font-display); font-weight: 500;
+    font-size: 1.35rem; margin: 14px 0 12px; color: var(--text-primary);
+  }
+  .bio-card p { color: var(--text-secondary); font-weight: 300; font-size: 0.96rem; }
+  .bio-card .bio-btn { margin-top: 22px; }
+
+  /* ───── AWAKEN / footer ───── */
+  #awaken { text-align: center; padding-bottom: clamp(60px, 10vh, 120px); }
+  #awaken h2 { margin-bottom: 36px; }
+  .aurora-divider {
+    height: 1px; width: min(680px, 80%); margin: 56px auto 28px;
+    background: var(--aurora); opacity: 0.4;
+  }
+  .footer-mono { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .footer-mono .copy { color: var(--text-tertiary); font-size: 0.7rem; opacity: 0.7; }
+
+  /* ───── SCROLL-REVEAL (sprout) ───── */
+  .sprout {
+    opacity: 0;
+    transform: translateY(40px) scale(0.86) skewY(2.5deg);
+    filter: blur(6px);
+    transition:
+      opacity var(--t-slow) var(--ease-grow),
+      transform var(--t-slow) var(--ease-grow),
+      filter var(--t-slow) var(--ease-grow);
+    transition-delay: var(--stagger, 0ms);
+  }
+  .sprout.grown {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+
+  /* ───── Forced-colors / high-contrast: keep gradient text readable ───── */
+  @media (forced-colors: active) {
+    .wordmark, .hero h1 {
+      -webkit-text-fill-color: currentColor;
+      color: CanvasText;
+      background: none;
+    }
+  }
+
+  /* ───── Reduced motion ───── */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+    .sprout { opacity: 1 !important; transform: none !important; filter: none !important; }
+    body { cursor: auto; }
+    #organism { display: none; }
+  }
+</style>
+</head>
+<body>
+
+  <!-- Background stack -->
+  <div class="bg-gradient" aria-hidden="true"></div>
+  <canvas id="bg" aria-hidden="true"></canvas>
+  <div class="aurora-haze" aria-hidden="true"></div>
+  <div class="vignette" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <!-- Nav -->
+  <nav id="nav">
+    <a href="#hero" class="wordmark">AETHERA</a>
+    <div class="nav-links">
+      <a href="#organism-sec">유기체</a>
+      <a href="#reacts">반응</a>
+      <a href="#awaken">깨우기</a>
+    </div>
+  </nav>
+
+  <main>
+    <!-- ───── HERO ───── -->
+    <section id="hero">
+      <div class="gaze-stage">
+        <div class="gaze hero-copy">
+          <div class="mono hero-eyebrow sprout">ORGANISM // AETHERA-01 // LIVING SPECIMEN</div>
+          <h1 class="sprout">숨 쉬는 빛을 입다</h1>
+          <p class="hero-sub sprout">AETHERA — 심야의 숲에서 자란 생체발광 유기체.<br />당신의 손길에 반응하며, 자라고, 움츠러듭니다.</p>
+          <div class="hero-cta-row sprout">
+            <button class="bio-btn" type="button">만져보기</button>
+            <button class="bio-btn bio-btn--ghost" type="button" onclick="document.getElementById('organism-sec').scrollIntoView({behavior:'smooth'})">유기체 보기</button>
+          </div>
+        </div>
+      </div>
+      <div class="mono hero-caption">SPECIMEN · GROWN NOT MADE · 498nm</div>
+      <div class="scroll-hint" aria-hidden="true">
+        <span class="mono" style="font-size:0.62rem;">SCROLL</span>
+        <span class="dot"></span>
+      </div>
+    </section>
+
+    <!-- ───── THE ORGANISM ───── -->
+    <section id="organism-sec">
+      <div class="split">
+        <div class="organism-visual gaze-stage sprout">
+          <div class="gaze">
+            <div class="breathe">
+              <div class="blob"><div class="blob-veins"></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="organism-text">
+          <div class="mono sprout">THE ORGANISM · 유기체</div>
+          <h2 class="sprout">기계가 아니라,<br />길러낸 생명.</h2>
+          <p class="sprout">AETHERA의 표피는 빛을 먹고, 코어는 천천히 호흡합니다. 당신이 다가가면 조직은 부풀고, 손을 떼면 다시 숨을 고릅니다. 만들어진 것이 아니라, 자라난 것입니다.</p>
+          <div class="vitals sprout">
+            <div class="vital"><span>개체 번호</span><span class="v-val">ORGANISM No.04</span></div>
+            <div class="vital"><span>호흡 주기</span><span class="v-val">5.4s</span></div>
+            <div class="vital"><span>발광 파장</span><span class="v-val">498nm</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ───── HOW IT REACTS ───── -->
+    <section id="reacts">
+      <div class="sec-head">
+        <div class="mono sprout">HOW IT REACTS · 반응</div>
+        <h2 class="sprout">당신의 행위에<br />이렇게 반응합니다</h2>
+        <p class="sprout">살아있는 것처럼. 다가가면 자라고, 누르면 움츠러들고, 어디를 가든 빛이 따라옵니다.</p>
+      </div>
+      <div class="card-row" id="card-row">
+        <article class="bio-card sprout">
+          <div class="card-index">01</div>
+          <h3>움츠러듦</h3>
+          <p>누르면 생물처럼 흠칫 움츠러들었다가, 손을 떼면 다시 천천히 펴집니다. 아래 버튼을 직접 눌러보세요.</p>
+          <button class="bio-btn bio-btn--small" type="button">눌러보기</button>
+        </article>
+        <article class="bio-card sprout">
+          <div class="card-index">02</div>
+          <h3>자라남</h3>
+          <p>다가가 머무르면 조직이 부풀어 오르고, 곁의 개체들은 살짝 뒤로 물러납니다. 이 카드 위에 마우스를 올려보세요.</p>
+        </article>
+        <article class="bio-card sprout">
+          <div class="card-index">03</div>
+          <h3>발광</h3>
+          <p>커서를 따라 부드러운 빛 덩어리가 흐르고, 배경의 포자들은 당신을 피해 소용돌이치며 밝아집니다.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- ───── AWAKEN / footer ───── -->
+    <section id="awaken">
+      <div class="sec-head sprout">
+        <div class="mono">AWAKEN · 깨우기</div>
+        <h2>유기체를<br />깨워보세요</h2>
+      </div>
+      <button class="bio-btn bio-btn--large sprout" type="button">유기체를 깨우세요</button>
+      <div class="aurora-divider sprout" aria-hidden="true"></div>
+      <div class="footer-mono sprout">
+        <span class="mono">AETHERA · GROWN NOT MADE · MMXXVI</span>
+        <span class="copy">© 2026 AETHERA — 가상의 브랜드 목업. 디자인과 심리 과제.</span>
+      </div>
+    </section>
+  </main>
+
+  <!-- Cursor-following organism blob (트레일이 대체) -->
+  <div id="organism" aria-hidden="true"></div>
+  <!-- 커서 광원 트레일 컨테이너 -->
+  <div id="trail" aria-hidden="true"></div>
+
+  <!-- ───────────────────── SCRIPT (single module) ───────────────────── -->
+  <script type="module">
+    import * as THREE from 'three';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+    const REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const isMobile = window.innerWidth < 700;
+
+    /* Shared cursor state — one source of truth */
+    const cursor = { x: window.innerWidth / 2, y: window.innerHeight / 2, has: false };
+    window.__cursor = cursor;
+
+    /* ════════════════ WebGL spore field ════════════════ */
+    const canvas = document.getElementById('bg');
+    // 불투명 캔버스 — 배경 그라데이션/네불라를 WebGL 씬 안에서 그린다.
+    // (투명 캔버스 + EffectComposer/OutputPass 조합은 알파가 깨져 검정으로 덮이는 버그가 있어 회피)
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, isMobile ? 1.5 : 1.75));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.toneMapping = THREE.NoToneMapping;       // keep additive cyan/magenta saturated
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x081628, 0.05);  // 원경 안개 — 먼 발광체가 배경으로 녹아듦
+
+    // ── 배경: 풀스크린 그라데이션 + 네불라 (씬 맨 뒤 큰 평면, fog/뎁스 영향 없음) ──
+    const bgMat = new THREE.ShaderMaterial({
+      depthTest: false, depthWrite: false, fog: false,
+      uniforms: { uTime: { value: 0 }, uAspect: { value: 1 } },
+      vertexShader: `
+        varying vec2 vUv;
+        void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }
+      `,
+      fragmentShader: `
+        precision highp float;
+        varying vec2 vUv;
+        uniform float uTime; uniform float uAspect;
+        float blob(vec2 p, vec2 c, float r){ return smoothstep(r, 0.0, length((p-c)*vec2(uAspect,1.0))); }
+        void main(){
+          vec2 p = vUv;
+          // 더 어둡게: 심야 톤
+          vec3 col = mix(vec3(0.008,0.022,0.045), vec3(0.045,0.12,0.19), pow(p.y, 1.4));
+          col = mix(col, vec3(0.018,0.045,0.085), 0.4);
+          float t = uTime * 0.03;
+          col += vec3(0.05,0.09,0.16) * blob(p, vec2(0.18+sin(t)*0.02, 0.82), 0.42) * 0.5;
+          col += vec3(0.09,0.05,0.13) * blob(p, vec2(0.82+cos(t*0.8)*0.02, 0.7), 0.40) * 0.42;
+          col += vec3(0.03,0.10,0.12) * blob(p, vec2(0.5, 0.12), 0.5) * 0.42;
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `,
+    });
+    const bgQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat);
+    bgQuad.frustumCulled = false;
+    bgQuad.renderOrder = -1;            // 항상 맨 먼저(맨 뒤) 렌더
+    scene.add(bgQuad);
+
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera.position.z = 14;
+
+    // 점광원은 셰이더에서 실시간으로 그린다 (텍스처 없음 → 어떤 크기에서도 매끈).
+
+    const COUNT = isMobile ? 920 : 1500;        // 점 증량
+    const HALF_W = 30, HALF_H = 19;             // 분포 반폭/반높이 (입체라 넓게)
+    const Z_NEAR = 4, Z_FAR = -10;              // 깊이 분포 (카메라 z=14 기준 가까움~멈)
+    const FOCUS_Z = 2.5;                        // 초점면 근처 z (거리 ~11.5) — 여기에 점을 더 모음
+    const positions = new Float32Array(COUNT * 3);
+    const seeds = new Float32Array(COUNT);
+    const sizes = new Float32Array(COUNT);
+    const tints = new Float32Array(COUNT);
+    // JS 물리 상태: 기본 흐름 위치(base) + 밀림 변위(off) + 밀림 속도(vel)
+    const baseX = new Float32Array(COUNT);
+    const baseY = new Float32Array(COUNT);
+    const baseZ = new Float32Array(COUNT);      // 깊이 (입체 배치)
+    const offX = new Float32Array(COUNT);
+    const offY = new Float32Array(COUNT);
+    const velX = new Float32Array(COUNT);
+    const velY = new Float32Array(COUNT);
+    const pushK = new Float32Array(COUNT);      // 밀림 영향 계수 (가까울수록↑, 멀수록↓)
+    for (let i = 0; i < COUNT; i++) {
+      baseX[i] = (Math.random() - 0.5) * HALF_W * 2;
+      baseY[i] = (Math.random() - 0.5) * HALF_H * 2;
+      // z 분포: 약 55%는 초점면 근처(또렷한 점), 나머지는 전체 깊이에 고루
+      if (i % 100 < 55) {
+        baseZ[i] = FOCUS_Z + (Math.random() - 0.5) * 6.0;   // 초점 ± 3 → 또렷
+      } else {
+        baseZ[i] = Z_FAR + Math.random() * (Z_NEAR - Z_FAR); // 전 깊이 (보케 포함)
+      }
+      // 크기 분포 강화: 큰 점이 더 자주·더 크게 (강렬한 발광체 ↑)
+      const rs = Math.random();
+      sizes[i] = 6 + Math.pow(rs, 1.15) * 34;               // 기본 크기 폭 확대
+      if (rs > 0.9) sizes[i] += Math.random() * 22;          // 상위 10%는 특대 발광체
+      // 밀림 영향: 가까운(z 큰) 점은 강하게, 먼 점은 약하게 (0.12~1.0)
+      const depthN = (baseZ[i] - Z_FAR) / (Z_NEAR - Z_FAR); // 0(멈)~1(가까움)
+      pushK[i] = 0.12 + depthN * depthN * 0.88;
+      seeds[i] = Math.random() * 100;
+      tints[i] = Math.pow(Math.random(), 1.5);
+      positions[i * 3 + 0] = baseX[i];
+      positions[i * 3 + 1] = baseY[i];
+      positions[i * 3 + 2] = baseZ[i];
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(sizes, 1));
+    geo.setAttribute('aTint', new THREE.BufferAttribute(tints, 1));
+
+    const uniforms = {
+      uTime: { value: 0 },
+      uPixelRatio: { value: renderer.getPixelRatio() },
+      uColorA: { value: new THREE.Color(0xCFE6FF) }, // 청백색
+      uColorB: { value: new THREE.Color(0x9FC2FF) }, // 은은한 연파랑
+      // ── 카메라 광학(피사계 심도/조리개) ──
+      uFocusDist: { value: 11.5 },   // 초점 거리
+      uAperture:  { value: 0.30 },   // 조리개 살짝 열어 — 부드러운 보케를 조금 더
+      uFocusRange:{ value: 4.5 },    // 또렷한 영역 더 넓힘
+    };
+
+    const mat = new THREE.ShaderMaterial({
+      uniforms,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexShader: /* glsl */`
+        attribute float aSeed;
+        attribute float aSize;
+        attribute float aTint;
+        uniform float uTime;
+        uniform float uPixelRatio;
+        uniform float uFocusDist;
+        uniform float uAperture;
+        uniform float uFocusRange;
+        varying float vTint;
+        varying float vGlow;
+        varying float vSeed;
+        varying float vBlur;
+
+        void main() {
+          vTint = aTint;
+          vSeed = aSeed;
+          // 위치/움직임/밀림은 모두 JS 물리 시뮬레이션에서 계산되어 position으로 들어온다.
+          vec3 pos = position;
+          float t = uTime;
+
+          // 생체발광 명멸: 느린 주기 + 살짝 어긋난 둘째 주기 → 불규칙하게 밝아졌다 어두워짐
+          float tw = 0.66
+                   + 0.26 * sin(t * 1.2566 + aSeed * 6.2831)
+                   + 0.10 * sin(t * 0.77 + aSeed * 3.1);
+          vGlow = clamp(0.78 * tw, 0.2, 1.05);   // 살짝 낮춰 배경 색이 묻히지 않게
+
+          vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+          float dist = -mv.z;   // 카메라로부터의 거리
+          // 호흡: 느린 호흡 + 미세한 빠른 떨림 2중 리듬 (살아있는 발광)
+          float breath = 0.88 + 0.12 * sin(t * 1.2 + aSeed * 6.0)
+                              + 0.04 * sin(t * 4.7 + aSeed * 13.0);
+          // 원근: 가까운 점은 크게, 먼 점은 작게 (입체 배치)
+          float baseSize = aSize * breath * uPixelRatio * (8.0 / max(dist, 1.0));
+
+          // ── 피사계 심도(조리개): 초점면에서 벗어난 정도 = 착란원(CoC) ──
+          float coc = max(0.0, abs(dist - uFocusDist) - uFocusRange) * uAperture;
+          vBlur = clamp(coc * 0.6, 0.0, 1.0);          // 0=또렷 ~ 1=최대 흐림
+          // 초점 밖 점은 빛망울이 퍼져 더 크게 그려짐 (보케)
+          float dofSize = baseSize * (1.0 + coc * 1.1);
+
+          gl_PointSize = clamp(dofSize, 0.0, 220.0);
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+      fragmentShader: /* glsl */`
+        precision highp float;
+        uniform vec3 uColorA;
+        uniform vec3 uColorB;
+        varying float vTint;
+        varying float vGlow;
+        varying float vSeed;
+        varying float vBlur;   // 0=초점(또렷) ~ 1=초점밖(보케 흐림)
+        void main() {
+          vec2 uv = gl_PointCoord - 0.5;
+          float r = length(uv) * 2.0;           // 0(중심) ~ 1(가장자리)
+          if (r > 1.0) discard;
+
+          // ── 초점(또렷) 프로파일: 날카로운 코어 + 헤일로 ──
+          float coreS = exp(-r * r * 14.0);
+          float haloS = exp(-r * 3.2) * 0.55;
+          float sharp = coreS + haloS;
+
+          // ── 보케(흐림) 프로파일: 부드러운 가우시안 빛망울 (도넛 림 없이 매끈) ──
+          float bokeh = exp(-r * r * 2.6) * 0.7;
+
+          // 초점→보케 보간
+          float profile = mix(sharp, bokeh, vBlur);
+          // 흐릴수록 가장자리를 더 길게 페이드 → 보케가 더 부드럽게 녹아듦
+          float edge = smoothstep(1.0, mix(0.82, 0.35, vBlur), r);
+          float a = clamp(profile * edge, 0.0, 1.0);
+          // 흐릴수록 같은 빛이 넓게 퍼지니 단위 밝기는 낮아짐 (에너지 보존 느낌)
+          a *= mix(1.0, 0.45, vBlur);
+          if (a < 0.003) discard;
+
+          vec3 baseCol = mix(uColorA, uColorB, vTint);
+
+          // 코어 화이트핫은 초점일 때만 (흐리면 색이 고르게 퍼짐)
+          float coreMask = smoothstep(0.32, 0.0, r) * (1.0 - vBlur);
+          vec3 col = mix(baseCol, vec3(1.0), coreMask * 0.9);
+          col = mix(col, baseCol * 1.08, smoothstep(0.3, 1.0, r) * 0.5);
+
+          // 미세 색수차 (광학적 사실감) — 보케에서 살짝 더 강조
+          float ca = smoothstep(0.4, 1.0, r) * (0.05 + vBlur * 0.06);
+          col.r *= 1.0 + ca; col.b *= 1.0 - ca * 0.5;
+
+          // HDR 코어 → bloom (초점 점만 강하게 번짐)
+          float hdr = 1.0 + coreMask * 1.8;
+          gl_FragColor = vec4(col * vGlow * hdr, a);
+        }
+      `,
+    });
+
+    const points = new THREE.Points(geo, mat);
+    scene.add(points);
+
+    /* ── Post: Render → Bloom → Output (OutputPass fixes sRGB/gamma) ── */
+    const composer = new EffectComposer(renderer);
+    composer.setPixelRatio(renderer.getPixelRatio());
+    composer.setSize(window.innerWidth, window.innerHeight);
+    const renderPass = new RenderPass(scene, camera);
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.7,   // strength — 코어 발광 번짐
+      0.55,  // radius
+      0.5    // threshold — 밝은 HDR 코어만 번지고 헤일로는 또렷이 유지
+    );
+    if (REDUCED) bloomPass.strength = 0.5;
+    composer.addPass(renderPass);
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+
+    /* Raycast cursor → z=0 plane (hoisted to avoid per-frame GC) */
+    const raycaster = new THREE.Raycaster();
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+    const hit = new THREE.Vector3();
+    const ndc = new THREE.Vector2();
+
+    // 숟가락(트레일 머리)의 월드 좌표. trailLoop이 매 프레임 화면좌표를 갱신.
+    const headScreen = { x: cursor.x, y: cursor.y };
+    const spoon = { x: 0, y: 0, px: 0, py: 0, has: false }; // 월드 좌표 + 이전 프레임
+    function updateSpoonWorld() {
+      ndc.x = (headScreen.x / window.innerWidth) * 2 - 1;
+      ndc.y = -(headScreen.y / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(ndc, camera);
+      if (raycaster.ray.intersectPlane(plane, hit)) {
+        spoon.x = hit.x; spoon.y = hit.y;
+      }
+    }
+
+    const PUSH_R = 2.8;        // 숟가락 반경 (넓혀서 경계가 더 부드럽게)
+    const FRICTION = 2.4;      // 마찰↑ → 밀린 뒤 덜 출렁이고 부드럽게 정착
+    const RETURN = 0.35;       // 제자리로 복귀하는 힘(초당) → 아주 천천히
+    const RISE = 0.30;         // 위로 상승 속도 (기존 0.15의 2배)
+
+    const clock = new THREE.Clock();
+    let spoonInit = false;
+    function simulate(dt) {
+      updateSpoonWorld();
+      if (!spoonInit) { spoon.px = spoon.x; spoon.py = spoon.y; spoonInit = true; }
+      // 숟가락 이동 벡터(이번 프레임 동안 움직인 양) = 미는 방향·속도
+      const sdx = spoon.x - spoon.px;
+      const sdy = spoon.y - spoon.py;
+      const sSpeed = Math.hypot(sdx, sdy);
+      const active = cursor.has && sSpeed > 0.0008;
+
+      const T = uniforms.uTime.value;
+      for (let i = 0; i < COUNT; i++) {
+        // 1) 기본 흐름: 위로 상승 + 생명체처럼 좌우로 느리게 흔들림
+        baseY[i] += RISE * dt;
+        // 좌우 운동: 각 점 고유 위상의 느린 사인파 (살아있는 듯한 흔들림)
+        const sway = (Math.sin(T * 0.25 + seeds[i] * 1.7) + Math.sin(T * 0.13 + seeds[i] * 0.6) * 0.6) * 0.55;
+        baseX[i] += sway * dt;
+        if (baseY[i] > HALF_H) {
+          baseY[i] -= HALF_H * 2;                 // 아래로 재배치
+          baseX[i] = (Math.random() - 0.5) * HALF_W * 2;
+          offX[i] = 0; offY[i] = 0; velX[i] = 0; velY[i] = 0; // 재생성 시 밀림 초기화
+        }
+
+        // 현재 점 위치 = 기본 + 밀림변위
+        const cx = baseX[i] + offX[i];
+        const cy = baseY[i] + offY[i];
+
+        // 2) 숟가락 충돌: 반경 안의 점에 '숟가락 이동 방향'의 속도를 전달 (콩 밀기)
+        //    멀리 있는(z 깊은) 점일수록 pushK가 작아 훨씬 덜 밀림.
+        if (active) {
+          const dx = cx - spoon.x, dy = cy - spoon.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < PUSH_R) {
+            // 부드러운 falloff (smoothstep) + 완만한 가속 → 팍 튕기지 않고 슥 밀림
+            const f = 1 - dist / PUSH_R;
+            const falloff = f * f * (3 - 2 * f);   // smoothstep
+            velX[i] += sdx * 6.3 * falloff * pushK[i];
+            velY[i] += sdy * 6.3 * falloff * pushK[i];
+          }
+        }
+
+        // 3) 관성 + 마찰: 밀린 속도로 이동하다 서서히 멈춤
+        offX[i] += velX[i] * dt;
+        offY[i] += velY[i] * dt;
+        const fr = Math.exp(-FRICTION * dt);
+        velX[i] *= fr; velY[i] *= fr;
+
+        // 4) 제자리로 아주 천천히 복귀
+        const ret = 1 - Math.exp(-RETURN * dt);
+        offX[i] -= offX[i] * ret;
+        offY[i] -= offY[i] * ret;
+
+        positions[i * 3 + 0] = baseX[i] + offX[i];
+        positions[i * 3 + 1] = baseY[i] + offY[i];
+        positions[i * 3 + 2] = baseZ[i];
+      }
+      geo.attributes.position.needsUpdate = true;
+      spoon.px = spoon.x; spoon.py = spoon.y;
+    }
+
+    bgMat.uniforms.uAspect.value = window.innerWidth / window.innerHeight;
+    function tick() {
+      const dt = Math.min(REDUCED ? 0 : clock.getDelta(), 0.05); // dt 폭주 방지
+      uniforms.uTime.value += dt;
+      bgMat.uniforms.uTime.value = uniforms.uTime.value;
+      if (!REDUCED) simulate(dt);
+      composer.render();
+      requestAnimationFrame(tick);
+    }
+    tick();
+
+    function onResize() {
+      const w = window.innerWidth, h = window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+      composer.setSize(w, h);
+      bloomPass.setSize(w, h);
+      uniforms.uPixelRatio.value = renderer.getPixelRatio();
+      bgMat.uniforms.uAspect.value = w / h;
+    }
+    window.addEventListener('resize', onResize);
+
+    /* ════════════════ 커서 광원 트레일 — 잔상처럼 길게 늘어지며 따라옴 ════════════════ */
+    const trailLayer = document.getElementById('trail');
+    const N_TRAIL = 7;                 // 트레일 점 개수 (많을수록 꼬리가 길다)
+    const HEAD_OPACITY = 0.34;         // 머리 광원 강도 (낮을수록 은은)
+    const dots = [];
+    let blobAwake = false;
+    if (!REDUCED) {
+      for (let i = 0; i < N_TRAIL; i++) {
+        const el = document.createElement('div');
+        el.className = 'trail-dot';
+        const t = i / (N_TRAIL - 1);   // 0(머리) ~ 1(꼬리)
+        // 꼬리로 갈수록 작고 흐리게
+        el.style.opacity = (HEAD_OPACITY * (1 - t * 0.85)).toFixed(3);
+        dots.push({ el, x: cursor.x, y: cursor.y, scale: 1 - t * 0.55 });
+        trailLayer.appendChild(el);
+      }
+    }
+    function wakeBlob() {
+      if (REDUCED || blobAwake) return;
+      blobAwake = true;
+    }
+    function trailLoop() {
+      if (REDUCED) return;
+      // 머리: 커서를 비교적 천천히 따라옴(오래 지속). 이후 점들은 앞 점을 더 느리게 따라가며 늘어짐.
+      const HEAD_LERP = 0.16;          // 작을수록 더 길게 늘어지고 오래 따라옴
+      const CHAIN_LERP = 0.28;
+      for (let i = 0; i < dots.length; i++) {
+        const d = dots[i];
+        const tx = i === 0 ? cursor.x : dots[i - 1].x;
+        const ty = i === 0 ? cursor.y : dots[i - 1].y;
+        const k = i === 0 ? HEAD_LERP : CHAIN_LERP;
+        d.x += (tx - d.x) * k;
+        d.y += (ty - d.y) * k;
+        d.el.style.transform = `translate(${d.x}px, ${d.y}px) scale(${d.scale.toFixed(3)})`;
+      }
+      // 트레일 머리 좌표를 밀림 기준으로 공유 → 광원과 밀림이 일치
+      if (dots.length) { headScreen.x = dots[0].x; headScreen.y = dots[0].y; }
+      requestAnimationFrame(trailLoop);
+    }
+    if (!REDUCED) trailLoop();
+
+    /* ════════════════ Shared pointer handler (gaze + cursor state) ════════════════ */
+    const gazeEls = Array.from(document.querySelectorAll('.gaze'));
+    let rafQueued = false;
+    function applyGaze() {
+      rafQueued = false;
+      if (REDUCED) return;
+      const nx = (cursor.x / window.innerWidth - 0.5) * 2;
+      const ny = (cursor.y / window.innerHeight - 0.5) * 2;
+      const ry = (nx * 8).toFixed(2) + 'deg';
+      const rx = (-ny * 8).toFixed(2) + 'deg';
+      for (const el of gazeEls) {
+        el.style.setProperty('--ry', ry);
+        el.style.setProperty('--rx', rx);
+      }
+    }
+    function onPointerMove(e) {
+      cursor.x = e.clientX;
+      cursor.y = e.clientY;
+      cursor.has = true;
+      if (!blobAwake) wakeBlob();
+      if (!rafQueued) { rafQueued = true; requestAnimationFrame(applyGaze); }
+    }
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+
+    // reset when the pointer truly leaves the window
+    window.addEventListener('pointerout', (e) => {
+      if (!e.relatedTarget) {
+        cursor.has = false;
+        if (!REDUCED) for (const el of gazeEls) { el.style.setProperty('--rx', '0deg'); el.style.setProperty('--ry', '0deg'); }
+      }
+    });
+
+    /* ════════════════ Button recoil ════════════════ */
+    function wireRecoil(el) {
+      if (REDUCED) return;
+      const press = () => { el.classList.add('is-pressed'); el.style.setProperty('--press', '0.91'); };
+      const release = () => { el.classList.remove('is-pressed'); el.style.setProperty('--press', '1'); };
+      el.addEventListener('pointerdown', press);
+      el.addEventListener('pointerup', release);
+      el.addEventListener('pointerleave', release);
+      el.addEventListener('pointercancel', release);
+    }
+    document.querySelectorAll('.bio-btn').forEach(wireRecoil);
+
+    /* ════════════════ Hover-grow + neighbor recoil ════════════════ */
+    const cards = Array.from(document.querySelectorAll('#card-row .bio-card'));
+    cards.forEach((card, i) => {
+      card.addEventListener('pointerenter', () => {
+        if (REDUCED) return;
+        cards.forEach((other, j) => {
+          if (Math.abs(j - i) === 1) {
+            other.classList.add('neighbor-recoil');
+            other.style.setProperty('--lean', (j < i ? -4 : 4));
+          }
+        });
+      });
+      card.addEventListener('pointerleave', () => {
+        cards.forEach((o) => { o.classList.remove('neighbor-recoil'); o.style.setProperty('--lean', 0); });
+      });
+    });
+
+    /* ════════════════ Scroll-reveal sprouting ════════════════ */
+    const sprouts = Array.from(document.querySelectorAll('.sprout'));
+    if (REDUCED) {
+      sprouts.forEach((el) => el.classList.add('grown'));
+    } else {
+      // assign stagger BEFORE observing (groups reset every 6), then clean up will-change
+      sprouts.forEach((el, i) => {
+        el.style.setProperty('--stagger', (i % 6) * 90 + 'ms');
+        el.style.willChange = 'transform, opacity, filter';
+      });
+      const io = new IntersectionObserver((entries) => {
+        for (const en of entries) {
+          if (en.isIntersecting) {
+            en.target.classList.add('grown');
+            en.target.addEventListener('transitionend', () => { en.target.style.willChange = 'auto'; }, { once: true });
+            io.unobserve(en.target);
+          }
+        }
+      }, { threshold: 0.18, rootMargin: '0px 0px -8% 0px' });
+      sprouts.forEach((el) => io.observe(el));
+    }
+
+    /* ════════════════ Nav scroll state ════════════════ */
+    const nav = document.getElementById('nav');
+    function onScroll() { nav.classList.toggle('scrolled', window.scrollY > 40); }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+  </script>
+</body>
+</html>
